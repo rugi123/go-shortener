@@ -1,0 +1,13 @@
+# config/local.yaml
+
+app:
+  env: dev
+  port: 8080
+  url_length: 5
+postgres:
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "1483"
+  dbname: "postgres"
+  sslmode: "disable"
