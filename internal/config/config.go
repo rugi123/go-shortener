@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -23,6 +24,20 @@ type PostgresConfig struct {
 type Config struct {
 	App      AppConfig
 	Postgres PostgresConfig
+}
+
+func (c *PostgresConfig) DSN() string {
+	user := url.QueryEscape(c.User)
+	password := url.QueryEscape(c.Password)
+	return fmt.Sprintf(
+		"postgres://%s:%s@%s:%v/%s?sslmode=%s",
+		user,
+		password,
+		c.Host,
+		c.Port,
+		c.DBName,
+		c.SSLMode,
+	)
 }
 
 func Load(path string) (*Config, error) {
