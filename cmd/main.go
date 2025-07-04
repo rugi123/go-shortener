@@ -11,11 +11,14 @@ import (
 func main() {
 	cfg, err := config.Load("internal/config/config.yaml")
 	if err != nil {
-		fmt.Println("ошибка загрузки конфига:", err)
+		fmt.Println("ошибка загрузки конфига: ", err)
 	}
 	conn, err := postgres.InintDB(context.Background(), cfg.Postgres)
 	if err != nil {
-		fmt.Println("ошибка инициализации db:", err)
+		fmt.Println("ошибка инициализации db: ", err)
 	}
-	fmt.Println(conn)
+	err = postgres.AddUrlToDB("sigma", "pro", context.Background(), *conn)
+	if err != nil {
+		fmt.Println("ошибка добавления в db: ", err)
+	}
 }

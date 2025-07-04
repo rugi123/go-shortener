@@ -9,5 +9,6 @@ postgres:
   port: 5432
   user: "postgres"
   password: "1483"
-  dbname: "postgres"
+  dbname: "url_shortender"
+  tablename: "short_urls"
   sslmode: "disable"

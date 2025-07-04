@@ -14,12 +14,13 @@ type AppConfig struct {
 	URLLength int    `yaml:"url_length"`
 }
 type PostgresConfig struct {
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
-	DBName   string `yaml:"dbname"`
-	SSLMode  string `yaml:"sslmode"`
+	Host      string `yaml:"host"`
+	Port      int    `yaml:"port"`
+	User      string `yaml:"user"`
+	Password  string `yaml:"password"`
+	DBName    string `yaml:"dbname"`
+	TableName string `yaml:"tablename"`
+	SSLMode   string `yaml:"sslmode"`
 }
 type Config struct {
 	App      AppConfig
@@ -43,11 +44,11 @@ func (c *PostgresConfig) DSN() string {
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка чтения кофнига:", err)
+		return nil, fmt.Errorf("ошибка чтения кофнига: %s", err)
 	}
 	cfg := Config{}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("ошибка парсинга конфига:", err)
+		return nil, fmt.Errorf("ошибка парсинга конфига: %s", err)
 	}
 	return &cfg, nil
 }
