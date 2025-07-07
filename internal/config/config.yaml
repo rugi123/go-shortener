@@ -2,8 +2,8 @@
 
 app:
   env: dev
-  port: 8080
-  url_length: 5
+  port: "8080"
+  url_length: 6
 postgres:
   host: "localhost"
   port: 5432

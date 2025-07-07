@@ -10,7 +10,7 @@ import (
 
 type AppConfig struct {
 	Env       string `yaml:"env"`
-	Port      int    `yaml:"port"`
+	Port      string `yaml:"port"`
 	URLLength int    `yaml:"url_length"`
 }
 type PostgresConfig struct {
