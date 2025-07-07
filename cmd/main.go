@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"net/http"
+	"log"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rugi123/go-shortener/internal/config"
+	"github.com/rugi123/go-shortener/internal/domain/service"
 	"github.com/rugi123/go-shortener/internal/handlers"
 	"github.com/rugi123/go-shortener/internal/storage/postgres"
 )
@@ -14,43 +14,22 @@ import (
 func main() {
 	cfg, err := config.Load("internal/config/config.yaml")
 	if err != nil {
-		fmt.Println("ошибка загрузки конфига: ", err)
+		log.Fatal("failed to load config: ", err)
 	}
-	conn, err := postgres.InintDB(context.Background(), cfg.Postgres)
+	storage, err := postgres.NewPGStorage(context.Background(), &cfg.Postgres)
 	if err != nil {
-		fmt.Println("ошибка инициализации db: ", err)
+		log.Fatal("failed to create new pg storage: ", err)
 	}
+	defer storage.Close()
 
-	r := gin.Default()
+	service := service.NewShortenerService(storage, cfg.App.URLLength)
 
-	r.POST("/shorten", func(c *gin.Context) {
-		var data map[string]string
+	handler := handlers.NewShortenHandler(service, "http://localhost:"+cfg.App.Port)
 
-		if err := c.ShouldBindJSON(&data); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		fmt.Println(data)
-		message, exists := data["url"]
-		if !exists {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "field 'url' is required"})
-			return
-		}
+	router := gin.Default()
 
-		short_url, err := handlers.Shortener(message, r, conn, c)
-		if err != nil {
-			fmt.Println("ошибка создания алиаса: ", err)
-		}
+	router.POST("/api/shorten", handler.Shorten)
+	router.GET("/:key", handler.Redirect)
 
-		c.JSON(http.StatusOK, gin.H{
-			"short_url": short_url,
-		})
-	})
-	r.GET("/long_url", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"tralalelo": "tralala",
-		})
-	})
-
-	r.Run(":" + cfg.App.Port)
+	router.Run()
 }

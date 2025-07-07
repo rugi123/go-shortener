@@ -1,26 +1,60 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
-	"time"
 
-	"github.com/rugi123/go-shortener/internal/config"
+	"github.com/rugi123/go-shortener/internal/domain/model"
 )
 
-func GenerateShortURL() (string, error) {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	seededRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-	cfg, err := config.Load("internal/config/config.yaml")
-	if err != nil {
-		return "", fmt.Errorf("ошибка загрузки конфига: %s", err)
+type Storage interface {
+	SaveLink(ctx context.Context, link *model.Link) error
+	GetLinkByKey(ctx context.Context, key string) (*model.Link, error)
+}
+
+type ShortenerService struct {
+	storage   Storage
+	keyLength int
+}
+
+func NewShortenerService(storage Storage, keyLength int) *ShortenerService {
+	return &ShortenerService{
+		storage:   storage,
+		keyLength: keyLength,
 	}
+}
 
-	b := make([]byte, cfg.App.URLLength)
+func (s *ShortenerService) GenerateKey() string {
+	b := make([]byte, s.keyLength)
 	for i := range b {
-		b[i] = charset[seededRand.Intn(len(charset))]
+		b[i] = alphabet[rand.Intn(len(alphabet))]
 	}
+	return string(b)
+}
 
-	return "/" + string(b), nil
+func (s *ShortenerService) ShortenURL(ctx context.Context, original_url string) (string, error) {
+	for attemp := 0; attemp < 5; attemp++ {
+		key := s.GenerateKey()
+		link := &model.Link{
+			OriginalURL: original_url,
+			ShortKey:    key,
+		}
+		err := s.storage.SaveLink(ctx, link)
+		if err == nil {
+			return key, nil
+		}
+		fmt.Println(err)
+	}
+	return "", fmt.Errorf("failed to generate unique short URL")
+}
+
+func (s *ShortenerService) ExpandURL(ctx context.Context, short_key string) (string, error) {
+	link, err := s.storage.GetLinkByKey(ctx, short_key)
+	if err != nil {
+		return "", err
+	}
+	return link.OriginalURL, nil
 }

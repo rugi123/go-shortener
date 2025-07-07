@@ -1,39 +1,69 @@
 package handlers
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/rugi123/go-shortener/internal/domain/model"
 	"github.com/rugi123/go-shortener/internal/domain/service"
-	"github.com/rugi123/go-shortener/internal/storage/postgres"
 )
 
-func Shortener(original_url string, r *gin.Engine, conn *pgx.Conn, ctx context.Context) (string, error) {
-	short_url, err := service.GenerateShortURL()
+type ShortenerHandler struct {
+	service    *service.ShortenerService
+	baseDomain string
+}
+
+func NewShortenHandler(service *service.ShortenerService, baseDomain string) *ShortenerHandler {
+	return &ShortenerHandler{
+		service:    service,
+		baseDomain: baseDomain,
+	}
+}
+
+func (h *ShortenerHandler) Shorten(c *gin.Context) {
+	var request struct {
+		URL string `json:"url" binding:"required,url"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	shortKey, err := h.service.ShortenURL(c.Request.Context(), request.URL)
 	if err != nil {
-		return "", fmt.Errorf("ошибка гинерации алиаса: %s", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Could not shorten URL: %s", err),
+		})
+		return
 	}
-	link := model.Link{
-		OriginalUrl: original_url,
-		ShortUrl:    short_url,
-	}
-	err = postgres.SaveLink(link, ctx, *conn)
-	if err != nil {
-		return "", fmt.Errorf("ошибка сохранения link: %s", err)
-	}
-	r.GET(short_url, func(c *gin.Context) {
-		path := c.FullPath()
-		link, err := postgres.SearchLink(path, ctx, *conn)
-		if err != nil {
-			fmt.Println("ошибка поиска в db: ", err)
-		}
-		if link != nil {
-			c.Redirect(http.StatusPermanentRedirect, link.OriginalUrl)
-		}
+
+	shortURL := h.baseDomain + "/" + shortKey
+
+	c.JSON(http.StatusOK, gin.H{
+		"original_url": request.URL,
+		"short_url":    shortURL,
+		"short_key":    shortKey,
 	})
-	return short_url, err
+}
+
+func (h *ShortenerHandler) Redirect(c *gin.Context) {
+	shortKey := c.Param("key")
+	if shortKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing short key"})
+		return
+	}
+	originalURL, err := h.service.ExpandURL(c.Request.Context(), shortKey)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "URL not found",
+			"key":   shortKey,
+		})
+		return
+	}
+
+	c.Redirect(http.StatusMovedPermanently, originalURL)
 }

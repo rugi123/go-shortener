@@ -3,66 +3,73 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rugi123/go-shortener/internal/config"
 	"github.com/rugi123/go-shortener/internal/domain/model"
 )
 
-func InintDB(ctx context.Context, cfg config.PostgresConfig) (*pgx.Conn, error) {
-	conn, err := pgx.Connect(ctx, cfg.DSN())
-	if err != nil {
-		return nil, fmt.Errorf("ошибка подключения к db: %s", err)
-	}
-	return conn, nil
+type PGStorage struct {
+	pool      *pgxpool.Pool
+	tableName string
 }
 
-func SearchLink(short_url string, ctx context.Context, conn pgx.Conn) (*model.Link, error) {
-	cfg, err := config.Load("internal/config/config.yaml")
+func NewPGStorage(ctx context.Context, cfg *config.PostgresConfig) (*PGStorage, error) {
+	poolConfig, err := pgxpool.ParseConfig(cfg.DSN())
 	if err != nil {
-		return nil, fmt.Errorf("ошибка загрузки конфига: %s", err)
+		return nil, fmt.Errorf("failed to parse connection string: %w", err)
 	}
 
-	rows, err := conn.Query(ctx, fmt.Sprintf("SELECT id, original_url, short_url FROM %s WHERE short_url = $1", cfg.Postgres.TableName), short_url)
+	poolConfig.MaxConns = 10
+	poolConfig.MinConns = 2
+	poolConfig.HealthCheckPeriod = 1 * time.Minute
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка поиска в db: %s", err)
+		return nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}
 
-	defer rows.Close()
-	for rows.Next() {
-		url := model.Link{}
-		err := rows.Scan(&url.ID, &url.OriginalUrl, &url.ShortUrl)
-		if err != nil {
-			return nil, fmt.Errorf("ошибка скана db: %s", err)
-		}
-		if url.ShortUrl == short_url {
-			return &url, nil
-		}
+	if err := pool.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
-	return nil, err
+
+	return &PGStorage{
+		pool:      pool,
+		tableName: cfg.TableName,
+	}, nil
 }
-func SaveLink(link model.Link, ctx context.Context, conn pgx.Conn) error {
-	cfg, err := config.Load("internal/config/config.yaml")
+
+func (s *PGStorage) SaveLink(ctx context.Context, link *model.Link) error {
+	query := fmt.Sprintf(`
+		INSERT INTO %s (original_url, short_key) 
+		VALUES ($1, $2)
+		ON CONFLICT (short_key) DO NOTHING`,
+		s.tableName)
+	_, err := s.pool.Exec(ctx, query, link.OriginalURL, link.ShortKey)
 	if err != nil {
-		return fmt.Errorf("ошибка загрузки конфига: %s", err)
+		return fmt.Errorf("failed to exec query: %w", err)
 	}
 
-	url, err := SearchLink(link.ShortUrl, ctx, conn)
-	if err != nil {
-		return fmt.Errorf("ошибка поиска в db: %s", err)
-	}
-	if url != nil {
-		return fmt.Errorf("найден такой же alias")
-	}
-	_, err = conn.Exec(ctx, fmt.Sprintf("INSERT INTO %s (original_url, short_url) VALUES ($1, $2)",
-		cfg.Postgres.TableName),
-		link.OriginalUrl,
-		link.ShortUrl)
-	if err != nil {
-		return fmt.Errorf("ошибка вставки в db: %s", err)
-	}
-	return err
-}
-func DeleteLink() error {
 	return nil
+}
+
+func (s *PGStorage) GetLinkByKey(ctx context.Context, key string) (*model.Link, error) {
+	query := fmt.Sprintf(`
+		SELECT id, original_url, short_key 
+		FROM %s 
+		WHERE short_key = $1`,
+		s.tableName)
+
+	var link model.Link
+	err := s.pool.QueryRow(ctx, query, key).Scan(&link.ID, &link.OriginalURL, &link.ShortKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get link: %w", err)
+	}
+
+	return &link, nil
+}
+
+func (s *PGStorage) Close() {
+	s.pool.Close()
 }
